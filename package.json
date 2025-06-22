@@ -1,18 +1,22 @@
 {
-  "name": "linkedin-ai-post",
+  "name": "voice-assistant",
   "version": "1.0.0",
-  "description": "",
-  "main": "voice-assistant.js",
+  "description": "AI Voice Assistant with Gemini AI",
+  "main": "server.js",
   "scripts": {
-    "start": "node voice-assistant.js",
+    "start": "node server.js",
+    "dev": "node voice-assistant.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": ["voice-assistant", "ai", "gemini", "speech-recognition"],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^16.5.0",
     "puppeteer": "^24.10.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
