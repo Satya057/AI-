@@ -151,33 +151,113 @@ const createDisplayHTML = () => {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'hi-IN'; // Hindi language support
+            recognition.maxAlternatives = 3; // Get multiple alternatives
+            recognition.grammars = null; // No grammar restrictions
+            
+            let listeningTimeout;
+            let silenceTimeout;
             
             recognition.onstart = function() {
                 console.log('🎤 Speech recognition started');
-                updateStatus('🎤 Sun raha hun...');
+                updateStatus('🎤 Sun raha hun... 15 seconds ke liye');
                 document.getElementById('mic-button').classList.add('listening');
+                
+                // Set timeout to stop listening after 15 seconds
+                listeningTimeout = setTimeout(() => {
+                    if (isListening) {
+                        stopListening();
+                    }
+                }, 15000);
             };
             
             recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                console.log('🎤 Heard:', transcript);
-                updateQuestion(transcript);
-                processQuestion(transcript);
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                // Show interim results in real-time
+                if (interimTranscript) {
+                    document.getElementById('current-question').textContent = interimTranscript;
+                }
+                
+                if (finalTranscript) {
+                    console.log('🎤 Heard:', finalTranscript);
+                    updateQuestion(finalTranscript);
+                    processQuestion(finalTranscript);
+                    stopListening(); // Stop listening after getting final result
+                }
+                
+                // Reset silence timeout when speech is detected
+                clearTimeout(silenceTimeout);
+                if (isListening && !finalTranscript) {
+                    silenceTimeout = setTimeout(() => {
+                        if (isListening) {
+                            console.log('🎤 No speech detected, stopping...');
+                            stopListening();
+                        }
+                    }, 3000); // Stop after 3 seconds of silence
+                }
+            };
+            
+            recognition.onaudiostart = function() {
+                console.log('🎤 Audio capturing started');
+            };
+            
+            recognition.onaudioend = function() {
+                console.log('🎤 Audio capturing ended');
+            };
+            
+            recognition.onsoundstart = function() {
+                console.log('🎤 Sound detected');
+            };
+            
+            recognition.onsoundend = function() {
+                console.log('🎤 Sound ended');
+            };
+            
+            recognition.onspeechstart = function() {
+                console.log('🎤 Speech started');
+            };
+            
+            recognition.onspeechend = function() {
+                console.log('🎤 Speech ended');
             };
             
             recognition.onerror = function(event) {
                 console.error('❌ Speech recognition error:', event.error);
                 updateStatus('❌ Error: ' + event.error);
                 document.getElementById('mic-button').classList.remove('listening');
+                clearTimeout(listeningTimeout);
+                clearTimeout(silenceTimeout);
+                
+                // Try to restart if it's a network error
+                if (event.error === 'network' && isListening) {
+                    setTimeout(() => {
+                        if (isListening) {
+                            console.log('🔄 Retrying speech recognition...');
+                            recognition.start();
+                        }
+                    }, 1000);
+                }
             };
             
             recognition.onend = function() {
                 console.log('🎤 Speech recognition ended');
                 isListening = false;
                 document.getElementById('mic-button').classList.remove('listening');
+                clearTimeout(listeningTimeout);
+                clearTimeout(silenceTimeout);
                 if (!isProcessing) {
                     updateStatus('🎤 Click "Interview Mode" to start');
                 }
