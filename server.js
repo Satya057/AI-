@@ -97,6 +97,65 @@ const createDisplayHTML = () => {
             background: #f3e5f5;
         }
         
+        .conversation-history {
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+        }
+        
+        .history-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: white;
+            border-left: 3px solid #667eea;
+        }
+        
+        .history-question {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .history-answer {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .memory-controls {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            justify-content: center;
+        }
+        
+        .memory-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .memory-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .memory-btn.clear {
+            background: #dc3545;
+        }
+        
+        .memory-btn.clear:hover {
+            background: #c82333;
+        }
+        
         .label {
             font-weight: bold;
             color: #333;
@@ -138,6 +197,16 @@ const createDisplayHTML = () => {
             <div class="content" id="current-answer">Jawab yahan show hoga...</div>
             <div class="timestamp" id="answer-time"></div>
         </div>
+        
+        <div class="memory-controls">
+            <button class="memory-btn" onclick="showHistory()">📚 Show History</button>
+            <button class="memory-btn clear" onclick="clearHistory()">🗑️ Clear Memory</button>
+        </div>
+        
+        <div class="conversation-history" id="conversation-history" style="display: none;">
+            <h3>📚 Conversation History</h3>
+            <div id="history-list"></div>
+        </div>
     </div>
 
     <button class="mic-button" id="mic-button" onclick="toggleListening()">🎤 Interview Mode</button>
@@ -146,6 +215,82 @@ const createDisplayHTML = () => {
         let isListening = false;
         let isProcessing = false;
         let recognition;
+        let conversationHistory = [];
+        
+        // Load conversation history from localStorage
+        function loadConversationHistory() {
+            const saved = localStorage.getItem('voiceAssistantHistory');
+            if (saved) {
+                conversationHistory = JSON.parse(saved);
+                console.log('📚 Loaded conversation history:', conversationHistory.length, 'items');
+            }
+        }
+        
+        // Save conversation history to localStorage
+        function saveConversationHistory() {
+            localStorage.setItem('voiceAssistantHistory', JSON.stringify(conversationHistory));
+            console.log('💾 Saved conversation history');
+        }
+        
+        // Add new conversation to history
+        function addToHistory(question, answer) {
+            const conversation = {
+                question: question,
+                answer: answer,
+                timestamp: new Date().toLocaleString()
+            };
+            conversationHistory.push(conversation);
+            
+            // Keep only last 20 conversations
+            if (conversationHistory.length > 20) {
+                conversationHistory = conversationHistory.slice(-20);
+            }
+            
+            saveConversationHistory();
+            updateHistoryDisplay();
+        }
+        
+        // Update history display
+        function updateHistoryDisplay() {
+            const historyList = document.getElementById('history-list');
+            if (!historyList) return;
+            
+            historyList.innerHTML = '';
+            conversationHistory.slice().reverse().forEach((item, index) => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                historyItem.innerHTML = `
+                    <div class="history-question">Q: ${item.question}</div>
+                    <div class="history-answer">A: ${item.answer}</div>
+                    <div class="timestamp">${item.timestamp}</div>
+                `;
+                historyList.appendChild(historyItem);
+            });
+        }
+        
+        // Show/hide conversation history
+        function showHistory() {
+            const historyDiv = document.getElementById('conversation-history');
+            if (historyDiv.style.display === 'none') {
+                historyDiv.style.display = 'block';
+                updateHistoryDisplay();
+            } else {
+                historyDiv.style.display = 'none';
+            }
+        }
+        
+        // Clear conversation history
+        function clearHistory() {
+            if (confirm('Are you sure you want to clear all conversation history?')) {
+                conversationHistory = [];
+                localStorage.removeItem('voiceAssistantHistory');
+                updateHistoryDisplay();
+                console.log('🗑️ Conversation history cleared');
+            }
+        }
+        
+        // Load history when page loads
+        loadConversationHistory();
         
         // Initialize speech recognition
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -318,13 +463,17 @@ const createDisplayHTML = () => {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ question: question })
+                    body: JSON.stringify({ 
+                        question: question,
+                        conversationHistory: conversationHistory.slice(-3) // Send last 3 conversations for context
+                    })
                 });
                 
                 const data = await response.json();
                 const answer = data.answer;
                 
                 updateAnswer(answer);
+                addToHistory(question, answer); // Add to conversation history
                 updateStatus('🎤 Ready. Click "Interview Mode" to ask a new question.');
                 
             } catch (error) {
@@ -344,10 +493,22 @@ const createDisplayHTML = () => {
 };
 
 // Function to generate AI response
-async function generateAIResponse(question) {
+async function generateAIResponse(question, conversationHistory = []) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const prompt = `Question: ${question}\n\nPlease provide a helpful answer in exactly 10 lines. Keep it simple and easy to understand. Use simple language and clear explanations.`;
+    
+    // Build context from conversation history
+    let contextPrompt = '';
+    if (conversationHistory.length > 0) {
+      contextPrompt = '\n\nPrevious conversation context:\n';
+      conversationHistory.slice(-3).forEach((item, index) => {
+        contextPrompt += `${index + 1}. Q: ${item.question}\n   A: ${item.answer}\n`;
+      });
+      contextPrompt += '\nBased on this context, ';
+    }
+    
+    const prompt = `Question: ${question}${contextPrompt}Please provide a helpful answer in exactly 10 lines. Keep it simple and easy to understand. Use simple language and clear explanations. If the question seems unclear or has misheard words, try to understand the context and provide a relevant answer.`;
+    
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
@@ -384,8 +545,8 @@ const server = http.createServer(async (req, res) => {
     
     req.on('end', async () => {
       try {
-        const { question } = JSON.parse(body);
-        const answer = await generateAIResponse(question);
+        const { question, conversationHistory = [] } = JSON.parse(body);
+        const answer = await generateAIResponse(question, conversationHistory);
         
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ answer: answer }));
