@@ -23,14 +23,13 @@ async function generateAIResponse(question, conversationHistory = []) {
       contextPrompt += '\nBased on this context, ';
     }
     
-    const prompt = `Question: ${question}${contextPrompt}First, determine if this is a technical question. If it is, provide an answer focused exclusively on JavaScript and related web technologies (like React, Node.js, Angular, HTML, CSS). If it is a general, non-technical question, provide a standard helpful answer. For all answers, keep them simple, easy to understand, and within 10 lines.`;
+    const prompt = `Question: ${question}${contextPrompt}First, determine if this is a technical question. If it is, provide an answer focused exclusively on JavaScript and related web technologies (like React, Node.js, Angular, HTML, CSS). If it is a general, non-technical question, provide a standard helpful answer. For all answers, please format your response using Markdown. Use code fences (e.g., \`\`\`js) for any code snippets. Keep the answers simple and easy to understand.`;
     
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    const result = await model.generateContentStream(prompt);
+    return result.stream;
   } catch (error) {
     console.error('❌ AI Response Error:', error);
-    return 'Sorry, I could not generate a response at the moment.';
+    throw new Error('Sorry, I could not generate a response at the moment.');
   }
 }
 
@@ -69,13 +68,24 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { question, conversationHistory = [] } = JSON.parse(body);
-        const answer = await generateAIResponse(question, conversationHistory);
         
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ answer: answer }));
+        res.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Transfer-Encoding': 'chunked'
+        });
+
+        const stream = await generateAIResponse(question, conversationHistory);
+        
+        for await (const chunk of stream) {
+          res.write(chunk.text());
+        }
+        res.end();
+
       } catch (error) {
         console.error('❌ Server Error:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+        }
         res.end(JSON.stringify({ error: 'Failed to process question' }));
       }
     });

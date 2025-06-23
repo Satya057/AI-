@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎧 Voice Assistant</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -309,6 +312,8 @@
         async function processQuestion(question) {
             updateStatus('🧠 Getting an answer from the AI...');
             isProcessing = true;
+            const answerDiv = document.getElementById('current-answer');
+            answerDiv.innerHTML = ''; // Clear previous answer
             
             try {
                 const response = await fetch('/process-question', {
@@ -322,16 +327,36 @@
                     })
                 });
                 
-                const data = await response.json();
-                const answer = data.answer;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullResponse += chunk;
+                    answerDiv.textContent = fullResponse; // Update with raw text for typing effect
+                }
+
+                // Final processing after stream is complete
+                answerDiv.innerHTML = marked.parse(fullResponse); // Render markdown
+                answerDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block); // Apply syntax highlighting
+                });
                 
-                updateAnswer(answer);
-                addToHistory(question, answer); // Add to conversation history
+                addToHistory(question, fullResponse); // Add to conversation history
                 updateStatus('🎤 Ready. Click "Interview Mode" to ask a new question.');
                 
             } catch (error) {
                 console.error('❌ Error processing question:', error);
-                updateAnswer('Sorry, I could not process your question.');
+                answerDiv.textContent = 'Sorry, I could not process your question.';
                 updateStatus('❌ Error. Click "Interview Mode" to try again.');
             } finally {
                 isProcessing = false;
