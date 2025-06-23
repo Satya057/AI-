@@ -9,7 +9,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
-            padding: 20px;
+            padding: 21px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -109,7 +109,7 @@
     <div class="container">
         <div class="header">
             <h1>🎧 Voice Assistant</h1>
-            <p>Question puchiye, 10 line me simple answer milega</p>
+            <p>Ask a question, and get a simple answer in 10 lines.</p>
         </div>
         
         <div class="status">
@@ -118,13 +118,13 @@
         
         <div class="question-section">
             <div class="label">🎤 Question:</div>
-            <div class="content" id="current-question">Koi question puchiye...</div>
+            <div class="content" id="current-question">Ask any question...</div>
             <div class="timestamp" id="question-time"></div>
         </div>
         
         <div class="answer-section">
             <div class="label">🧠 Answer:</div>
-            <div class="content" id="current-answer">Jawab yahan show hoga...</div>
+            <div class="content" id="current-answer">The answer will be shown here...</div>
             <div class="timestamp" id="answer-time"></div>
         </div>
     </div>
@@ -135,32 +135,121 @@
         let isListening = false;
         let isProcessing = false;
         let recognition;
+        let conversationHistory = [];
+        
+        // Load conversation history from localStorage
+        function loadConversationHistory() {
+            const saved = localStorage.getItem('voiceAssistantHistory');
+            if (saved) {
+                conversationHistory = JSON.parse(saved);
+                console.log('📚 Loaded conversation history:', conversationHistory.length, 'items');
+            }
+        }
+        
+        // Save conversation history to localStorage
+        function saveConversationHistory() {
+            localStorage.setItem('voiceAssistantHistory', JSON.stringify(conversationHistory));
+            console.log('💾 Saved conversation history');
+        }
+        
+        // Add new conversation to history
+        function addToHistory(question, answer) {
+            const conversation = {
+                question: question,
+                answer: answer,
+                timestamp: new Date().toLocaleString()
+            };
+            conversationHistory.push(conversation);
+            
+            // Keep only last 20 conversations
+            if (conversationHistory.length > 20) {
+                conversationHistory = conversationHistory.slice(-20);
+            }
+            
+            saveConversationHistory();
+        }
+        
+        // Load history when page loads
+        loadConversationHistory();
         
         // Initialize speech recognition
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US'; // English language support
+            recognition.maxAlternatives = 3; // Get multiple alternatives
             
             recognition.onstart = function() {
                 console.log('🎤 Speech recognition started');
-                updateStatus('🎤 Sun raha hun...');
+                updateStatus('🎤 Listening... Click button to stop.');
                 document.getElementById('mic-button').classList.add('listening');
             };
             
             recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                console.log('🎤 Heard:', transcript);
-                updateQuestion(transcript);
-                processQuestion(transcript);
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                // Show interim results in real-time
+                if (interimTranscript) {
+                    document.getElementById('current-question').textContent = interimTranscript;
+                }
+                
+                if (finalTranscript) {
+                    console.log('🎤 Heard:', finalTranscript);
+                    updateQuestion(finalTranscript);
+                    processQuestion(finalTranscript);
+                }
+            };
+            
+            recognition.onaudiostart = function() {
+                console.log('🎤 Audio capturing started');
+            };
+            
+            recognition.onaudioend = function() {
+                console.log('🎤 Audio capturing ended');
+            };
+            
+            recognition.onsoundstart = function() {
+                console.log('🎤 Sound detected');
+            };
+            
+            recognition.onsoundend = function() {
+                console.log('🎤 Sound ended');
+            };
+            
+            recognition.onspeechstart = function() {
+                console.log('🎤 Speech started');
+            };
+            
+            recognition.onspeechend = function() {
+                console.log('🎤 Speech ended');
             };
             
             recognition.onerror = function(event) {
                 console.error('❌ Speech recognition error:', event.error);
                 updateStatus('❌ Error: ' + event.error);
                 document.getElementById('mic-button').classList.remove('listening');
+                
+                // Try to restart if it's a network error
+                if (event.error === 'network' && isListening) {
+                    setTimeout(() => {
+                        if (isListening) {
+                            console.log('🔄 Retrying speech recognition...');
+                            recognition.start();
+                        }
+                    }, 1000);
+                }
             };
             
             recognition.onend = function() {
@@ -218,7 +307,7 @@
         }
         
         async function processQuestion(question) {
-            updateStatus('🧠 AI se jawab maang raha hun...');
+            updateStatus('🧠 Getting an answer from the AI...');
             isProcessing = true;
             
             try {
@@ -227,13 +316,17 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ question: question })
+                    body: JSON.stringify({ 
+                        question: question,
+                        conversationHistory: conversationHistory.slice(-3) // Send last 3 conversations for context
+                    })
                 });
                 
                 const data = await response.json();
                 const answer = data.answer;
                 
                 updateAnswer(answer);
+                addToHistory(question, answer); // Add to conversation history
                 updateStatus('🎤 Ready. Click "Interview Mode" to ask a new question.');
                 
             } catch (error) {
