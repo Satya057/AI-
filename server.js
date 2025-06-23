@@ -20,7 +20,7 @@ const createDisplayHTML = () => {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
-            padding: 20px;
+            padding: 21px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
